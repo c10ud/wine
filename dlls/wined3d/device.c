@@ -2020,7 +2020,7 @@ static void resolve_depth_buffer(struct wined3d_state *state)
     if (!texture || texture->resource.type != WINED3D_RTYPE_TEXTURE_2D
             || !(texture->resource.format_flags & WINED3DFMT_FLAG_DEPTH))
         return;
-    surface = surface_from_resource(texture->sub_resources[0]);
+    surface = surface_from_resource(texture->sub_resources[0].old);
     if (!(depth_stencil = wined3d_rendertarget_view_get_surface(state->fb->depth_stencil)))
         return;
 
