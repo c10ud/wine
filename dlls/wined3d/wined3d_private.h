@@ -2385,6 +2385,8 @@ struct wined3d_texture
     struct
     {
         struct wined3d_resource *old;
+
+        DWORD locations;
     } sub_resources[1];
 };
 
@@ -2432,7 +2434,6 @@ struct wined3d_volume
     struct wined3d_resource resource;
     struct wined3d_texture *container;
 
-    DWORD locations;
     GLint texture_level;
     DWORD download_count;
     GLuint pbo;

@@ -1107,6 +1107,7 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
                 wined3d_texture_cleanup(texture);
                 return hr;
             }
+        }
 
         texture->sub_resources[i].old = &surface->resource;
         TRACE("Created surface level %u @ %p.\n", i, surface);
@@ -1324,6 +1325,7 @@ static HRESULT volumetexture_init(struct wined3d_texture *texture, const struct 
         }
 
         texture->sub_resources[i].old = &volume->resource;
+        texture->sub_resources[i].locations = WINED3D_LOCATION_DISCARDED;
 
         /* Calculate the next mipmap level. */
         volume_desc.width = max(1, volume_desc.width >> 1);
