@@ -769,7 +769,7 @@ static HRESULT wined3d_texture_upload_data(struct wined3d_texture *texture,
         struct wined3d_resource *sub_resource = texture->sub_resources[i].old;
 
         texture->texture_ops->texture_sub_resource_upload_data(sub_resource, context, &data[i]);
-        texture->texture_ops->texture_sub_resource_validate_location(sub_resource, WINED3D_LOCATION_TEXTURE_RGB);
+        wined3d_texture_validate_location(texture, i, WINED3D_LOCATION_TEXTURE_RGB);
         texture->texture_ops->texture_sub_resource_invalidate_location(sub_resource, ~WINED3D_LOCATION_TEXTURE_RGB);
     }
 
@@ -809,15 +809,6 @@ static void texture2d_sub_resource_invalidate_location(struct wined3d_resource *
     struct wined3d_surface *surface = surface_from_resource(sub_resource);
 
     surface_invalidate_location(surface, location);
-}
-
-static void texture2d_sub_resource_validate_location(struct wined3d_texture *texture,
-        unsigned int sub_resource_idx, DWORD location)
-{
-    struct wined3d_resource *sub_resource = texture->sub_resources[sub_resource_idx].old;
-    struct wined3d_surface *surface = surface_from_resource(sub_resource);
-
-    surface_validate_location(surface, location);
 }
 
 static void texture2d_sub_resource_upload_data(struct wined3d_resource *sub_resource,
@@ -905,7 +896,6 @@ static const struct wined3d_texture_ops texture2d_ops =
     texture2d_sub_resource_add_dirty_region,
     texture2d_sub_resource_cleanup,
     texture2d_sub_resource_invalidate_location,
-    texture2d_sub_resource_validate_location,
     texture2d_sub_resource_upload_data,
     texture2d_prepare_texture,
 };
@@ -1147,12 +1137,6 @@ static void texture3d_sub_resource_invalidate_location(struct wined3d_resource *
     wined3d_volume_invalidate_location(volume, location);
 }
 
-static void texture3d_sub_resource_validate_location(struct wined3d_texture *texture,
-        unsigned int sub_resource_idx, DWORD location)
-{
-    wined3d_texture_validate_location(texture, sub_resource_idx, location);
-}
-
 static void texture3d_sub_resource_upload_data(struct wined3d_resource *sub_resource,
         const struct wined3d_context *context, const struct wined3d_sub_resource_data *data)
 {
@@ -1197,7 +1181,6 @@ static const struct wined3d_texture_ops texture3d_ops =
     texture3d_sub_resource_add_dirty_region,
     texture3d_sub_resource_cleanup,
     texture3d_sub_resource_invalidate_location,
-    texture3d_sub_resource_validate_location,
     texture3d_sub_resource_upload_data,
     texture3d_prepare_texture,
 };
