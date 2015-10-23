@@ -2497,6 +2497,7 @@ struct wined3d_surface
     const struct wined3d_surface_ops *surface_ops;
     struct wined3d_texture *container;
     DWORD locations;
+    void *user_memory;
 
     DWORD flags;
 
