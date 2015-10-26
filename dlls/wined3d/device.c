@@ -3550,49 +3550,59 @@ void CDECL wined3d_device_draw_indexed_primitive_instanced(struct wined3d_device
 }
 
 /* This is a helper function for UpdateTexture, there is no UpdateVolume method in D3D. */
-static HRESULT device_update_volume(struct wined3d_device *device,
-        struct wined3d_volume *src_volume, struct wined3d_volume *dst_volume)
+static HRESULT device_update_volume(struct wined3d_device *device, unsigned int level_count,
+        struct wined3d_texture *src_texture, unsigned int skip_levels, struct wined3d_texture *dst_texture)
 {
     struct wined3d_const_bo_address data;
     struct wined3d_map_desc src;
     HRESULT hr;
     struct wined3d_context *context;
+    unsigned int i;
 
-    TRACE("device %p, src_volume %p, dst_volume %p.\n",
-            device, src_volume, dst_volume);
+    TRACE("device %p, src_texture %p, skip_levels %u, dst_texture %p.\n",
+            device, src_texture, skip_levels, dst_texture);
 
-    if (src_volume->resource.format != dst_volume->resource.format)
+    if (src_texture->resource.format != dst_texture->resource.format)
     {
         FIXME("Source and destination formats do not match.\n");
         return WINED3DERR_INVALIDCALL;
     }
-    if (src_volume->resource.width != dst_volume->resource.width
-            || src_volume->resource.height != dst_volume->resource.height
-            || src_volume->resource.depth != dst_volume->resource.depth)
+    if ((src_texture->resource.width >> skip_levels) != dst_texture->resource.width
+            || (src_texture->resource.height >> skip_levels) != dst_texture->resource.height
+            || (src_texture->resource.depth >> skip_levels) != dst_texture->resource.depth)
     {
         FIXME("Source and destination sizes do not match.\n");
         return WINED3DERR_INVALIDCALL;
     }
 
-    if (FAILED(hr = wined3d_volume_map(src_volume, &src, NULL, WINED3D_MAP_READONLY)))
-        return hr;
-
     context = context_acquire(device, NULL);
-
     /* Only a prepare, since we're uploading the entire volume. */
-    wined3d_texture_prepare_texture(dst_volume->container, context, FALSE);
-    wined3d_texture_bind_and_dirtify(dst_volume->container, context, FALSE);
+    wined3d_texture_prepare_texture(dst_texture, context, FALSE);
+    wined3d_texture_bind_and_dirtify(dst_texture, context, FALSE);
 
-    data.buffer_object = 0;
-    data.addr = src.data;
-    wined3d_volume_upload_data(dst_volume, context, &data);
-    wined3d_texture_invalidate_location(dst_volume->container, dst_volume->texture_level, ~WINED3D_LOCATION_TEXTURE_RGB);
+    for (i = 0; i < level_count; ++i)
+    {
+        if (FAILED(hr = wined3d_texture_map(src_texture, i + skip_levels, &src, NULL, WINED3D_MAP_READONLY)))
+        {
+            context_release(context);
+            return hr;
+        }
+
+        data.buffer_object = 0;
+        data.addr = src.data;
+        wined3d_volume_upload_data(volume_from_resource(dst_texture->sub_resources[i].old),
+                context, &data);
+        wined3d_texture_invalidate_location(dst_texture, i, ~WINED3D_LOCATION_TEXTURE_RGB);
+
+        if (FAILED(hr = wined3d_texture_unmap(src_texture, i + skip_levels)))
+        {
+            context_release(context);
+            return hr;
+        }
+    }
 
     context_release(context);
-
-    hr = wined3d_volume_unmap(src_volume);
-
-    return hr;
+    return WINED3D_OK;
 }
 
 HRESULT CDECL wined3d_device_update_texture(struct wined3d_device *device,
@@ -3690,17 +3700,10 @@ HRESULT CDECL wined3d_device_update_texture(struct wined3d_device *device,
 
         case WINED3D_RTYPE_TEXTURE_3D:
         {
-            for (i = 0; i < level_count; ++i)
+            if (FAILED(hr = device_update_volume(device, level_count, src_texture, src_skip_levels, dst_texture)))
             {
-                hr = device_update_volume(device,
-                        volume_from_resource(wined3d_texture_get_sub_resource(src_texture,
-                                i + src_skip_levels)),
-                        volume_from_resource(wined3d_texture_get_sub_resource(dst_texture, i)));
-                if (FAILED(hr))
-                {
-                    WARN("Failed to update volume, hr %#x.\n", hr);
-                    return hr;
-                }
+                WARN("Failed to update volume, hr %#x.\n", hr);
+                return hr;
             }
             break;
         }
