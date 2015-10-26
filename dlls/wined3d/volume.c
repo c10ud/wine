@@ -607,7 +607,6 @@ HRESULT wined3d_volume_map(struct wined3d_volume *volume,
 
     if (!(flags & (WINED3D_MAP_NO_DIRTY_UPDATE | WINED3D_MAP_READONLY)))
     {
-        wined3d_texture_set_dirty(volume->container);
         wined3d_texture_invalidate_location(volume->container, volume->texture_level,
                 ~volume->resource.map_binding);
     }

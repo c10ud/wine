@@ -3541,9 +3541,7 @@ void surface_invalidate_location(struct wined3d_surface *surface, DWORD location
 {
     TRACE("surface %p, location %s.\n", surface, wined3d_debug_location(location));
 
-    if (location & (WINED3D_LOCATION_TEXTURE_RGB | WINED3D_LOCATION_TEXTURE_SRGB))
-        wined3d_texture_set_dirty(surface->container);
-    surface->container->sub_resources[surface->sub_resource_idx].locations &= ~location;
+    wined3d_texture_invalidate_location(surface->container, surface->sub_resource_idx, location);
 
     if (!surface->container->sub_resources[surface->sub_resource_idx].locations)
         ERR("Surface %p does not have any up to date location.\n", surface);

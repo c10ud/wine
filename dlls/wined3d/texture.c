@@ -1674,6 +1674,10 @@ void wined3d_texture_invalidate_location(struct wined3d_texture *texture, unsign
         DWORD location)
 {
     TRACE("Texture %p, clearing %s.\n", texture, wined3d_debug_location(location));
+
+    if (location & (WINED3D_LOCATION_TEXTURE_RGB | WINED3D_LOCATION_TEXTURE_SRGB))
+        wined3d_texture_set_dirty(texture);
+
     texture->sub_resources[sub_resource_idx].locations &= ~location;
     TRACE("new location flags are %s.\n", wined3d_debug_location(
             texture->sub_resources[sub_resource_idx].locations));
