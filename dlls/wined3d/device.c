@@ -397,11 +397,11 @@ void device_clear_render_targets(struct wined3d_device *device, UINT rt_count, c
             if (fb->render_targets[i])
             {
                 struct wined3d_texture *rt = wined3d_texture_from_resource(fb->render_targets[i]->resource);
-                struct wined3d_surface *rt_surface = wined3d_rendertarget_view_get_surface(fb->render_targets[i]);
 
                 wined3d_texture_validate_location(rt, fb->render_targets[i]->sub_resource_idx,
                         rt->resource.draw_binding);
-                surface_invalidate_location(rt_surface, ~rt_surface->container->resource.draw_binding);
+                wined3d_texture_invalidate_location(rt, fb->render_targets[i]->sub_resource_idx,
+                        ~rt->resource.draw_binding);
             }
         }
 
@@ -4114,7 +4114,7 @@ void CDECL wined3d_device_update_sub_resource(struct wined3d_device *device, str
     context_release(context);
 
     wined3d_texture_validate_location(texture, sub_resource_idx, WINED3D_LOCATION_TEXTURE_RGB);
-    surface_invalidate_location(surface, ~WINED3D_LOCATION_TEXTURE_RGB);
+    wined3d_texture_invalidate_location(texture, sub_resource_idx, ~WINED3D_LOCATION_TEXTURE_RGB);
 }
 
 HRESULT CDECL wined3d_device_clear_rendertarget_view(struct wined3d_device *device,

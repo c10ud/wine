@@ -430,7 +430,6 @@ static void swapchain_gl_present(struct wined3d_swapchain *swapchain, const RECT
     const struct wined3d_fb_state *fb = &swapchain->device->fb;
     const struct wined3d_gl_info *gl_info;
     struct wined3d_context *context;
-    struct wined3d_surface *front;
     RECT src_rect, dst_rect;
     BOOL render_to_fbo;
 
@@ -526,7 +525,7 @@ static void swapchain_gl_present(struct wined3d_swapchain *swapchain, const RECT
     if (!swapchain->render_to_fbo && render_to_fbo && wined3d_settings.offscreen_rendering_mode == ORM_FBO)
     {
         surface_load_location(back_buffer, context, WINED3D_LOCATION_TEXTURE_RGB);
-        surface_invalidate_location(back_buffer, WINED3D_LOCATION_DRAWABLE);
+        wined3d_texture_invalidate_location(swapchain->back_buffers[0], 0, WINED3D_LOCATION_DRAWABLE);
         swapchain->render_to_fbo = TRUE;
         swapchain_update_draw_bindings(swapchain);
     }
@@ -568,10 +567,8 @@ static void swapchain_gl_present(struct wined3d_swapchain *swapchain, const RECT
         }
     }
 
-    front = surface_from_resource(wined3d_texture_get_sub_resource(swapchain->front_buffer, 0));
-
     wined3d_texture_validate_location(swapchain->front_buffer, 0, WINED3D_LOCATION_DRAWABLE);
-    surface_invalidate_location(front, ~WINED3D_LOCATION_DRAWABLE);
+    wined3d_texture_invalidate_location(swapchain->front_buffer, 0, ~WINED3D_LOCATION_DRAWABLE);
     /* If the swapeffect is DISCARD, the back buffer is undefined. That means the SYSMEM
      * and INTEXTURE copies can keep their old content if they have any defined content.
      * If the swapeffect is COPY, the content remains the same.
@@ -758,7 +755,6 @@ static HRESULT swapchain_init(struct wined3d_swapchain *swapchain, struct wined3
 {
     const struct wined3d_adapter *adapter = device->adapter;
     struct wined3d_resource_desc texture_desc;
-    struct wined3d_surface *front_buffer;
     BOOL displaymode_set = FALSE;
     RECT client_rect;
     HWND window;
@@ -840,11 +836,10 @@ static HRESULT swapchain_init(struct wined3d_swapchain *swapchain, struct wined3
     }
 
     wined3d_texture_set_swapchain(swapchain->front_buffer, swapchain);
-    front_buffer = surface_from_resource(wined3d_texture_get_sub_resource(swapchain->front_buffer, 0));
     if (!(device->wined3d->flags & WINED3D_NO3D))
     {
         wined3d_texture_validate_location(swapchain->front_buffer, 0, WINED3D_LOCATION_DRAWABLE);
-        surface_invalidate_location(front_buffer, ~WINED3D_LOCATION_DRAWABLE);
+        wined3d_texture_invalidate_location(swapchain->front_buffer, 0, ~WINED3D_LOCATION_DRAWABLE);
     }
 
     /* MSDN says we're only allowed a single fullscreen swapchain per device,
@@ -904,7 +899,9 @@ static HRESULT swapchain_init(struct wined3d_swapchain *swapchain, struct wined3
         for (i = 0; i < (sizeof(formats) / sizeof(*formats)); i++)
         {
             swapchain->ds_format = wined3d_get_format(gl_info, formats[i]);
-            swapchain->context[0] = context_create(swapchain, front_buffer, swapchain->ds_format);
+            swapchain->context[0] = context_create(swapchain,
+                    surface_from_resource(wined3d_texture_get_sub_resource(swapchain->front_buffer, 0)),
+                    swapchain->ds_format);
             if (swapchain->context[0]) break;
             TRACE("Depth stencil format %s is not supported, trying next format\n",
                   debug_d3dformat(formats[i]));

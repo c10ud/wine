@@ -627,8 +627,10 @@ void draw_primitive(struct wined3d_device *device, UINT start_idx, UINT index_co
         {
             if (state->render_states[WINED3D_RS_COLORWRITEENABLE])
             {
+                struct wined3d_texture *texture = wined3d_texture_from_resource(device->fb.render_targets[i]->resource);
                 surface_load_location(target, context, target->container->resource.draw_binding);
-                surface_invalidate_location(target, ~target->container->resource.draw_binding);
+                wined3d_texture_invalidate_location(texture, device->fb.render_targets[i]->sub_resource_idx,
+                        ~texture->resource.draw_binding);
             }
             else
             {
