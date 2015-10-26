@@ -698,7 +698,7 @@ void wined3d_texture_force_reload(struct wined3d_texture *texture)
     texture->async.flags &= ~WINED3D_TEXTURE_ASYNC_COLOR_KEY;
     for (i = 0; i < sub_count; ++i)
     {
-        texture->texture_ops->texture_sub_resource_invalidate_location(texture->sub_resources[i].old,
+        texture->texture_ops->texture_sub_resource_invalidate_location(texture, i,
                 WINED3D_LOCATION_TEXTURE_RGB | WINED3D_LOCATION_TEXTURE_SRGB);
     }
 }
@@ -770,7 +770,7 @@ static HRESULT wined3d_texture_upload_data(struct wined3d_texture *texture,
 
         texture->texture_ops->texture_sub_resource_upload_data(sub_resource, context, &data[i]);
         wined3d_texture_validate_location(texture, i, WINED3D_LOCATION_TEXTURE_RGB);
-        texture->texture_ops->texture_sub_resource_invalidate_location(sub_resource, ~WINED3D_LOCATION_TEXTURE_RGB);
+        texture->texture_ops->texture_sub_resource_invalidate_location(texture, i, ~WINED3D_LOCATION_TEXTURE_RGB);
     }
 
     context_release(context);
@@ -804,8 +804,10 @@ static void texture2d_sub_resource_cleanup(struct wined3d_resource *sub_resource
     wined3d_surface_destroy(surface);
 }
 
-static void texture2d_sub_resource_invalidate_location(struct wined3d_resource *sub_resource, DWORD location)
+static void texture2d_sub_resource_invalidate_location(struct wined3d_texture *texture,
+        unsigned int sub_resource_idx, DWORD location)
 {
+    struct wined3d_resource *sub_resource = texture->sub_resources[sub_resource_idx].old;
     struct wined3d_surface *surface = surface_from_resource(sub_resource);
 
     surface_invalidate_location(surface, location);
@@ -1130,11 +1132,10 @@ static void texture3d_sub_resource_cleanup(struct wined3d_resource *sub_resource
     wined3d_volume_destroy(volume);
 }
 
-static void texture3d_sub_resource_invalidate_location(struct wined3d_resource *sub_resource, DWORD location)
+static void texture3d_sub_resource_invalidate_location(struct wined3d_texture *texture,
+        unsigned int sub_resource_idx, DWORD location)
 {
-    struct wined3d_volume *volume = volume_from_resource(sub_resource);
-
-    wined3d_volume_invalidate_location(volume, location);
+    wined3d_texture_invalidate_location(texture, sub_resource_idx, location);
 }
 
 static void texture3d_sub_resource_upload_data(struct wined3d_resource *sub_resource,
@@ -1681,6 +1682,15 @@ void wined3d_texture_validate_location(struct wined3d_texture *texture, unsigned
 {
     TRACE("Texture %p, idx %u, setting %s.\n", texture, sub_resource_idx, wined3d_debug_location(location));
     texture->sub_resources[sub_resource_idx].locations |= location;
+    TRACE("new location flags are %s.\n", wined3d_debug_location(
+            texture->sub_resources[sub_resource_idx].locations));
+}
+
+void wined3d_texture_invalidate_location(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+        DWORD location)
+{
+    TRACE("Texture %p, clearing %s.\n", texture, wined3d_debug_location(location));
+    texture->sub_resources[sub_resource_idx].locations &= ~location;
     TRACE("new location flags are %s.\n", wined3d_debug_location(
             texture->sub_resources[sub_resource_idx].locations));
 }
