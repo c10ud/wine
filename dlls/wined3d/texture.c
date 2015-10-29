@@ -494,9 +494,11 @@ void wined3d_texture_load(struct wined3d_texture *texture,
     }
 
     /* Reload the surfaces if the texture is marked dirty. */
+    wined3d_texture_prepare_texture(texture, context, srgb);
     for (i = 0; i < sub_count; ++i)
     {
-        texture->texture_ops->texture_sub_resource_load(texture->sub_resources[i].old, context, srgb);
+        wined3d_texture_load_location(texture, i, context,
+                srgb ? WINED3D_LOCATION_TEXTURE_SRGB : WINED3D_LOCATION_TEXTURE_RGB);
     }
     texture->flags |= flag;
 }
@@ -824,13 +826,6 @@ static HRESULT wined3d_texture_upload_data(struct wined3d_texture *texture,
 }
 
 /* Context activation is done by the caller. */
-static void texture2d_sub_resource_load(struct wined3d_resource *sub_resource,
-        struct wined3d_context *context, BOOL srgb)
-{
-    surface_load(surface_from_resource(sub_resource), context, srgb);
-}
-
-/* Context activation is done by the caller. */
 static void texture2d_sub_resource_load_location(struct wined3d_texture *texture, unsigned int sub_resource_idx,
             struct wined3d_context *context, DWORD location)
 {
@@ -941,7 +936,6 @@ static void texture2d_prepare_texture(struct wined3d_texture *texture, struct wi
 
 static const struct wined3d_texture_ops texture2d_ops =
 {
-    texture2d_sub_resource_load,
     texture2d_sub_resource_load_location,
     texture2d_sub_resource_add_dirty_region,
     texture2d_sub_resource_cleanup,
@@ -1188,13 +1182,6 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
     }
 
     return WINED3D_OK;
-}
-
-/* Context activation is done by the caller. */
-static void texture3d_sub_resource_load(struct wined3d_resource *sub_resource,
-        struct wined3d_context *context, BOOL srgb)
-{
-    wined3d_volume_load(volume_from_resource(sub_resource), context, srgb);
 }
 
 /* Context activation is done by the caller. */
