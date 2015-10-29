@@ -2172,9 +2172,6 @@ HRESULT wined3d_surface_map(struct wined3d_surface *surface, struct wined3d_map_
         surface_load_location(surface, context, surface->resource.map_binding);
     }
 
-    if (context)
-        context_release(context);
-
     if (!(flags & (WINED3D_MAP_NO_DIRTY_UPDATE | WINED3D_MAP_READONLY)))
         wined3d_texture_invalidate_location(surface->container, surface->sub_resource_idx,
                 ~surface->resource.map_binding);
@@ -2194,22 +2191,21 @@ HRESULT wined3d_surface_map(struct wined3d_surface *surface, struct wined3d_map_
             break;
 
         case WINED3D_LOCATION_BUFFER:
-            context = context_acquire(device, NULL);
             gl_info = context->gl_info;
-
             GL_EXTCALL(glBindBuffer(GL_PIXEL_UNPACK_BUFFER,
                     surface->container->sub_resources[surface->sub_resource_idx].pbo));
             base_memory = GL_EXTCALL(glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_READ_WRITE));
             GL_EXTCALL(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0));
             checkGLcall("map PBO");
-
-            context_release(context);
             break;
 
         default:
             ERR("Unexpected map binding %s.\n", wined3d_debug_location(surface->resource.map_binding));
             base_memory = NULL;
     }
+
+    if (context)
+        context_release(context);
 
     if (fmt_flags & WINED3DFMT_FLAG_BROKEN_PITCH)
     {
