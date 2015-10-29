@@ -108,12 +108,21 @@ static void wined3d_texture_cleanup(struct wined3d_texture *texture)
 {
     UINT sub_count = texture->level_count * texture->layer_count;
     UINT i;
+    struct wined3d_texture_dib *dib;
 
     TRACE("texture %p.\n", texture);
 
     for (i = 0; i < sub_count; ++i)
     {
         struct wined3d_resource *sub_resource = texture->sub_resources[i].old;
+
+        dib = &texture->sub_resources[i].dib;
+        if (dib->dib_section)
+        {
+            DeleteDC(dib->dc);
+            DeleteObject(dib->dib_section);
+            dib->bitmap_data = NULL;
+        }
 
         if (sub_resource)
             texture->texture_ops->texture_sub_resource_cleanup(sub_resource);
@@ -606,6 +615,9 @@ HRESULT CDECL wined3d_texture_update_desc(struct wined3d_texture *texture, UINT 
     const struct wined3d_format *format = wined3d_get_format(gl_info, format_id);
     UINT resource_size = wined3d_format_calculate_size(format, device->surface_alignment, width, height, 1);
     struct wined3d_surface *surface;
+    struct wined3d_texture_dib *dib;
+    BOOL create_dib = FALSE;
+    HRESULT hr;
 
     TRACE("texture %p, width %u, height %u, format %s, multisample_type %#x, multisample_quality %u, "
             "mem %p, pitch %u.\n",
@@ -646,8 +658,18 @@ HRESULT CDECL wined3d_texture_update_desc(struct wined3d_texture *texture, UINT 
         return WINED3DERR_INVALIDCALL;
     }
 
+    dib = &texture->sub_resources[0].dib;
+
     if (device->d3d_initialized)
         texture->resource.resource_ops->resource_unload(&texture->resource);
+
+    if (dib->dib_section)
+    {
+        DeleteDC(dib->dc);
+        DeleteObject(dib->dib_section);
+        dib->bitmap_data = NULL;
+        create_dib = TRUE;
+    }
 
     texture->resource.format = format;
     texture->resource.multisample_type = multisample_type;
@@ -662,6 +684,15 @@ HRESULT CDECL wined3d_texture_update_desc(struct wined3d_texture *texture, UINT 
         /* User memory surfaces don't have the regular surface alignment. */
         wined3d_format_calculate_pitch(format, 1, width, height,
                 &texture->row_pitch, &texture->slice_pitch);
+
+    if (create_dib)
+    {
+        if (FAILED(hr = wined3d_texture_create_dib_section(texture, 0)))
+        {
+            ERR("Failed to create dib section, hr %#x.\n", hr);
+            return hr;
+        }
+    }
 
     return wined3d_surface_update_desc(surface, gl_info);
 }
@@ -1095,6 +1126,18 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
         }
 
         texture->sub_resources[i].old = &surface->resource;
+
+        if ((desc->usage & WINED3DUSAGE_OWNDC) && !texture->sub_resources[i].dib.dc
+                && SUCCEEDED(wined3d_texture_create_dib_section(texture, i)))
+            surface->resource.map_binding = WINED3D_LOCATION_DIB;
+
+        if (surface->resource.map_binding == WINED3D_LOCATION_DIB)
+        {
+            wined3d_resource_free_sysmem(&surface->resource);
+            wined3d_texture_validate_location(texture, i, WINED3D_LOCATION_DIB);
+            wined3d_texture_invalidate_location(texture, i, WINED3D_LOCATION_SYSMEM);
+        }
+
         TRACE("Created surface level %u @ %p.\n", i, surface);
         /* Calculate the next mipmap level. */
         surface_desc.width = max(1, surface_desc.width >> 1);
@@ -1682,4 +1725,111 @@ void wined3d_texture_invalidate_location(struct wined3d_texture *texture, unsign
     texture->sub_resources[sub_resource_idx].locations &= ~location;
     TRACE("new location flags are %s.\n", wined3d_debug_location(
             texture->sub_resources[sub_resource_idx].locations));
+}
+
+HRESULT wined3d_texture_create_dib_section(struct wined3d_texture *texture, unsigned int sub_resource_idx)
+{
+    const struct wined3d_format *format = texture->resource.format;
+    unsigned int format_flags = texture->resource.format_flags;
+    BITMAPINFO *b_info;
+    DWORD *masks, row_pitch, slice_pitch;
+    struct wined3d_texture_dib *dib = &texture->sub_resources[sub_resource_idx].dib;
+    unsigned int level = sub_resource_idx % texture->level_count;
+
+    TRACE("texture %p, sub_resource_idx %u.\n", texture, sub_resource_idx);
+
+    if (!(format_flags & WINED3DFMT_FLAG_GETDC))
+    {
+        WARN("Cannot use GetDC on a %s texture.\n", debug_d3dformat(format->id));
+        return WINED3DERR_INVALIDCALL;
+    }
+
+    switch (format->byte_count)
+    {
+        case 2:
+        case 4:
+            /* Allocate extra space to store the RGB bit masks. */
+            b_info = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(BITMAPINFOHEADER) + 3 * sizeof(DWORD));
+            break;
+
+        case 3:
+            b_info = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(BITMAPINFOHEADER));
+            break;
+
+        default:
+            /* Allocate extra space for a palette. */
+            b_info = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+                    sizeof(BITMAPINFOHEADER) + sizeof(RGBQUAD) * (1u << (format->byte_count * 8)));
+            break;
+    }
+
+    if (!b_info)
+        return E_OUTOFMEMORY;
+
+    wined3d_texture_get_pitch(texture, sub_resource_idx, &row_pitch, &slice_pitch);
+
+    b_info->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    /* TODO: Is there a nicer way to force a specific alignment? (8 byte for ddraw) */
+    b_info->bmiHeader.biWidth = row_pitch / format->byte_count;
+    b_info->bmiHeader.biHeight = 0 - (texture->resource.height >> level);
+    b_info->bmiHeader.biSizeImage = slice_pitch;
+    b_info->bmiHeader.biPlanes = 1;
+    b_info->bmiHeader.biBitCount = format->byte_count * 8;
+
+    b_info->bmiHeader.biXPelsPerMeter = 0;
+    b_info->bmiHeader.biYPelsPerMeter = 0;
+    b_info->bmiHeader.biClrUsed = 0;
+    b_info->bmiHeader.biClrImportant = 0;
+
+    /* Get the bit masks */
+    masks = (DWORD *)b_info->bmiColors;
+    switch (format->id)
+    {
+        case WINED3DFMT_B8G8R8_UNORM:
+            b_info->bmiHeader.biCompression = BI_RGB;
+            break;
+
+        case WINED3DFMT_B5G5R5X1_UNORM:
+        case WINED3DFMT_B5G5R5A1_UNORM:
+        case WINED3DFMT_B4G4R4A4_UNORM:
+        case WINED3DFMT_B4G4R4X4_UNORM:
+        case WINED3DFMT_B2G3R3_UNORM:
+        case WINED3DFMT_B2G3R3A8_UNORM:
+        case WINED3DFMT_R10G10B10A2_UNORM:
+        case WINED3DFMT_R8G8B8A8_UNORM:
+        case WINED3DFMT_R8G8B8X8_UNORM:
+        case WINED3DFMT_B10G10R10A2_UNORM:
+        case WINED3DFMT_B5G6R5_UNORM:
+        case WINED3DFMT_R16G16B16A16_UNORM:
+            b_info->bmiHeader.biCompression = BI_BITFIELDS;
+            wined3d_format_get_color_masks(format, masks);
+            break;
+
+        default:
+            /* Don't know palette */
+            b_info->bmiHeader.biCompression = BI_RGB;
+            break;
+    }
+
+    TRACE("Creating a DIB section with size %dx%dx%d, size=%d.\n",
+            b_info->bmiHeader.biWidth, b_info->bmiHeader.biHeight,
+            b_info->bmiHeader.biBitCount, b_info->bmiHeader.biSizeImage);
+    dib->dib_section = CreateDIBSection(0, b_info, DIB_RGB_COLORS, &dib->bitmap_data, 0, 0);
+
+    if (!dib->dib_section)
+    {
+        ERR("Failed to create DIB section.\n");
+        HeapFree(GetProcessHeap(), 0, b_info);
+        return HRESULT_FROM_WIN32(GetLastError());
+    }
+
+    TRACE("DIBSection at %p.\n", dib->bitmap_data);
+
+    HeapFree(GetProcessHeap(), 0, b_info);
+
+    /* Now allocate a DC. */
+    dib->dc = CreateCompatibleDC(0);
+    SelectObject(dib->dc, dib->dib_section);
+
+    return WINED3D_OK;
 }

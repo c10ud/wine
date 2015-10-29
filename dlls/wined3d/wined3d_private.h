@@ -2385,6 +2385,13 @@ struct wined3d_texture
         struct wined3d_resource *old;
 
         DWORD locations;
+
+        struct wined3d_texture_dib
+        {
+            HBITMAP dib_section;
+            void *bitmap_data;
+            HDC dc;
+        } dib;
     } sub_resources[1];
 };
 
@@ -2405,6 +2412,8 @@ void wined3d_texture_bind(struct wined3d_texture *texture,
         struct wined3d_context *context, BOOL srgb) DECLSPEC_HIDDEN;
 void wined3d_texture_bind_and_dirtify(struct wined3d_texture *texture,
         struct wined3d_context *context, BOOL srgb) DECLSPEC_HIDDEN;
+HRESULT wined3d_texture_create_dib_section(struct wined3d_texture *texture,
+        unsigned int sub_resource_idx) DECLSPEC_HIDDEN;
 void wined3d_texture_force_reload(struct wined3d_texture *texture) DECLSPEC_HIDDEN;
 void wined3d_texture_load(struct wined3d_texture *texture,
         struct wined3d_context *context, BOOL srgb) DECLSPEC_HIDDEN;
@@ -2456,13 +2465,6 @@ HRESULT wined3d_volume_unmap(struct wined3d_volume *volume) DECLSPEC_HIDDEN;
 void wined3d_volume_upload_data(struct wined3d_volume *volume, const struct wined3d_context *context,
         const struct wined3d_const_bo_address *data) DECLSPEC_HIDDEN;
 
-struct wined3d_surface_dib
-{
-    HBITMAP DIBsection;
-    void *bitmap_data;
-    UINT bitmap_size;
-};
-
 struct wined3d_renderbuffer_entry
 {
     struct list entry;
@@ -2511,10 +2513,6 @@ struct wined3d_surface
 
     RECT                      lockedRect;
     int                       lockCount;
-
-    /* For GetDC */
-    struct wined3d_surface_dib dib;
-    HDC                       hDC;
 
     struct list               renderbuffers;
     const struct wined3d_renderbuffer_entry *current_renderbuffer;

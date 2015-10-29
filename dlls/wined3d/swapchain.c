@@ -605,7 +605,8 @@ static const struct wined3d_swapchain_ops swapchain_gl_ops =
 /* Helper function that blits the front buffer contents to the target window. */
 void x11_copy_to_screen(const struct wined3d_swapchain *swapchain, const RECT *rect)
 {
-    struct wined3d_surface *front;
+    struct wined3d_texture *front;
+    struct wined3d_surface *front_surface;
     POINT offset = {0, 0};
     HDC src_dc, dst_dc;
     RECT draw_rect;
@@ -613,18 +614,19 @@ void x11_copy_to_screen(const struct wined3d_swapchain *swapchain, const RECT *r
 
     TRACE("swapchain %p, rect %s.\n", swapchain, wine_dbgstr_rect(rect));
 
-    front = surface_from_resource(wined3d_texture_get_sub_resource(swapchain->front_buffer, 0));
+    front = swapchain->front_buffer;
+    front_surface = surface_from_resource(wined3d_texture_get_sub_resource(front, 0));
     if (swapchain->palette)
-        wined3d_palette_apply_to_dc(swapchain->palette, front->hDC);
+        wined3d_palette_apply_to_dc(swapchain->palette, front->sub_resources[0].dib.dc);
 
-    if (front->resource.map_count)
+    if (front_surface->resource.map_count)
         ERR("Trying to blit a mapped surface.\n");
 
     TRACE("Copying surface %p to screen.\n", front);
 
-    surface_load_location(front, NULL, WINED3D_LOCATION_DIB);
+    surface_load_location(front_surface, NULL, WINED3D_LOCATION_DIB);
 
-    src_dc = front->hDC;
+    src_dc = swapchain->front_buffer->sub_resources[0].dib.dc;
     window = swapchain->win_handle;
     dst_dc = GetDCEx(window, 0, DCX_CLIPSIBLINGS | DCX_CACHE);
 
@@ -652,41 +654,12 @@ void x11_copy_to_screen(const struct wined3d_swapchain *swapchain, const RECT *r
 static void swapchain_gdi_present(struct wined3d_swapchain *swapchain, const RECT *src_rect_in,
         const RECT *dst_rect_in, const RGNDATA *dirty_region, DWORD flags)
 {
-    struct wined3d_surface *front, *back;
+    struct wined3d_texture *front = swapchain->front_buffer, *back = swapchain->back_buffers[0];
+    struct wined3d_texture_dib tmp;
 
-    front = surface_from_resource(wined3d_texture_get_sub_resource(swapchain->front_buffer, 0));
-    back = surface_from_resource(wined3d_texture_get_sub_resource(swapchain->back_buffers[0], 0));
-
-    /* Flip the DC. */
-    {
-        HDC tmp;
-        tmp = front->hDC;
-        front->hDC = back->hDC;
-        back->hDC = tmp;
-    }
-
-    /* Flip the DIBsection. */
-    {
-        HBITMAP tmp;
-        tmp = front->dib.DIBsection;
-        front->dib.DIBsection = back->dib.DIBsection;
-        back->dib.DIBsection = tmp;
-    }
-
-    /* Flip the surface data. */
-    {
-        void *tmp;
-
-        tmp = front->dib.bitmap_data;
-        front->dib.bitmap_data = back->dib.bitmap_data;
-        back->dib.bitmap_data = tmp;
-
-        if (front->resource.heap_memory)
-            ERR("GDI Surface %p has heap memory allocated.\n", front);
-
-        if (back->resource.heap_memory)
-            ERR("GDI Surface %p has heap memory allocated.\n", back);
-    }
+    tmp = front->sub_resources[0].dib;
+    front->sub_resources[0].dib = back->sub_resources[0].dib;
+    back->sub_resources[0].dib = tmp;
 
     /* FPS support */
     if (TRACE_ON(fps))
