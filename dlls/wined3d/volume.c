@@ -196,7 +196,7 @@ static BOOL wined3d_volume_can_evict(const struct wined3d_volume *volume)
     return TRUE;
 }
 /* Context activation is done by the caller. */
-static void wined3d_volume_load_location(struct wined3d_volume *volume,
+void wined3d_volume_load_location(struct wined3d_volume *volume,
         struct wined3d_context *context, DWORD location)
 {
     DWORD required_access = volume_access_from_location(location);
@@ -369,7 +369,7 @@ static void volume_unload(struct wined3d_resource *resource)
     if (volume_prepare_system_memory(volume))
     {
         context = context_acquire(device, NULL);
-        wined3d_volume_load_location(volume, context, WINED3D_LOCATION_SYSMEM);
+        wined3d_texture_load_location(volume->container, volume->texture_level, context, WINED3D_LOCATION_SYSMEM);
         context_release(context);
         wined3d_texture_invalidate_location(volume->container, volume->texture_level,
                 ~WINED3D_LOCATION_SYSMEM);
@@ -484,7 +484,7 @@ HRESULT wined3d_volume_map(struct wined3d_volume *volume,
         if (flags & WINED3D_MAP_DISCARD)
             wined3d_texture_validate_location(volume->container, volume->texture_level, WINED3D_LOCATION_BUFFER);
         else
-            wined3d_volume_load_location(volume, context, WINED3D_LOCATION_BUFFER);
+            wined3d_texture_load_location(volume->container, volume->texture_level, context, WINED3D_LOCATION_BUFFER);
 
         GL_EXTCALL(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, volume->container->sub_resources[volume->texture_level].pbo));
 
@@ -522,7 +522,7 @@ HRESULT wined3d_volume_map(struct wined3d_volume *volume,
         else if (!(volume->container->sub_resources[volume->texture_level].locations & WINED3D_LOCATION_SYSMEM))
         {
             context = context_acquire(device, NULL);
-            wined3d_volume_load_location(volume, context, WINED3D_LOCATION_SYSMEM);
+            wined3d_texture_load_location(volume->container, volume->texture_level, context, WINED3D_LOCATION_SYSMEM);
             context_release(context);
         }
         base_memory = volume->resource.heap_memory;

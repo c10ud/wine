@@ -823,10 +823,20 @@ static HRESULT wined3d_texture_upload_data(struct wined3d_texture *texture,
     return WINED3D_OK;
 }
 
+/* Context activation is done by the caller. */
 static void texture2d_sub_resource_load(struct wined3d_resource *sub_resource,
         struct wined3d_context *context, BOOL srgb)
 {
     surface_load(surface_from_resource(sub_resource), context, srgb);
+}
+
+/* Context activation is done by the caller. */
+static void texture2d_sub_resource_load_location(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+            struct wined3d_context *context, DWORD location)
+{
+    struct wined3d_resource *sub_resource = texture->sub_resources[sub_resource_idx].old;
+
+    surface_load_location(surface_from_resource(sub_resource), context, location);
 }
 
 static void texture2d_sub_resource_add_dirty_region(struct wined3d_resource *sub_resource,
@@ -932,6 +942,7 @@ static void texture2d_prepare_texture(struct wined3d_texture *texture, struct wi
 static const struct wined3d_texture_ops texture2d_ops =
 {
     texture2d_sub_resource_load,
+    texture2d_sub_resource_load_location,
     texture2d_sub_resource_add_dirty_region,
     texture2d_sub_resource_cleanup,
     texture2d_sub_resource_upload_data,
@@ -1179,10 +1190,20 @@ static HRESULT texture_init(struct wined3d_texture *texture, const struct wined3
     return WINED3D_OK;
 }
 
+/* Context activation is done by the caller. */
 static void texture3d_sub_resource_load(struct wined3d_resource *sub_resource,
         struct wined3d_context *context, BOOL srgb)
 {
     wined3d_volume_load(volume_from_resource(sub_resource), context, srgb);
+}
+
+/* Context activation is done by the caller. */
+static void texture3d_sub_resource_load_location(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+            struct wined3d_context *context, DWORD location)
+{
+    struct wined3d_resource *sub_resource = texture->sub_resources[sub_resource_idx].old;
+
+    wined3d_volume_load_location(volume_from_resource(sub_resource), context, location);
 }
 
 static void texture3d_sub_resource_add_dirty_region(struct wined3d_resource *sub_resource,
@@ -1934,4 +1955,11 @@ void wined3d_texture_prepare_buffer(struct wined3d_texture *texture, unsigned in
             pbo, texture, sub_resource_idx, sub_resource);
 
     texture->sub_resources[sub_resource_idx].pbo = pbo;
+}
+
+/* Context activation is done by the caller. Context may be NULL. */
+void wined3d_texture_load_location(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+        struct wined3d_context *context, DWORD location)
+{
+    texture->texture_ops->texture_sub_resource_load_location(texture, sub_resource_idx, context, location);
 }

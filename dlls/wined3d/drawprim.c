@@ -622,18 +622,19 @@ void draw_primitive(struct wined3d_device *device, UINT start_idx, UINT index_co
 
     for (i = 0; i < device->adapter->gl_info.limits.buffers; ++i)
     {
-        struct wined3d_surface *target = wined3d_rendertarget_view_get_surface(device->fb.render_targets[i]);
-        if (target && target->resource.format->id != WINED3DFMT_NULL)
+        if (device->fb.render_targets[i] && device->fb.render_targets[i]->format->id != WINED3DFMT_NULL)
         {
             if (state->render_states[WINED3D_RS_COLORWRITEENABLE])
             {
                 struct wined3d_texture *texture = wined3d_texture_from_resource(device->fb.render_targets[i]->resource);
-                surface_load_location(target, context, target->container->resource.draw_binding);
+                wined3d_texture_load_location(texture, device->fb.render_targets[i]->sub_resource_idx,
+                        context, texture->resource.draw_binding);
                 wined3d_texture_invalidate_location(texture, device->fb.render_targets[i]->sub_resource_idx,
                         ~texture->resource.draw_binding);
             }
             else
             {
+                struct wined3d_surface *target = wined3d_rendertarget_view_get_surface(device->fb.render_targets[i]);
                 wined3d_surface_prepare(target, context, target->container->resource.draw_binding);
             }
         }
