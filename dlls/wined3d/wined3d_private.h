@@ -2385,6 +2385,7 @@ struct wined3d_texture
         struct wined3d_resource *old;
 
         DWORD locations;
+        GLuint pbo;
 
         struct wined3d_texture_dib
         {
@@ -2418,8 +2419,12 @@ HRESULT wined3d_texture_create_dib_section(struct wined3d_texture *texture,
 void wined3d_texture_force_reload(struct wined3d_texture *texture) DECLSPEC_HIDDEN;
 void wined3d_texture_load(struct wined3d_texture *texture,
         struct wined3d_context *context, BOOL srgb) DECLSPEC_HIDDEN;
+void wined3d_texture_prepare_buffer(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+        struct wined3d_context *context) DECLSPEC_HIDDEN;
 void wined3d_texture_prepare_texture(struct wined3d_texture *texture,
         struct wined3d_context *context, BOOL srgb) DECLSPEC_HIDDEN;
+void wined3d_texture_remove_buffer(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+        const struct wined3d_gl_info *gl_info) DECLSPEC_HIDDEN;
 void wined3d_texture_set_dirty(struct wined3d_texture *texture) DECLSPEC_HIDDEN;
 void wined3d_texture_set_swapchain(struct wined3d_texture *texture,
         struct wined3d_swapchain *swapchain) DECLSPEC_HIDDEN;
@@ -2446,7 +2451,6 @@ struct wined3d_volume
 
     GLint texture_level;
     DWORD download_count;
-    GLuint pbo;
 };
 
 static inline struct wined3d_volume *volume_from_resource(struct wined3d_resource *resource)
@@ -2504,8 +2508,6 @@ struct wined3d_surface
     UINT pow2Width;
     UINT pow2Height;
 
-    /* PBO */
-    GLuint                    pbo;
     GLuint rb_multisample;
     GLuint rb_resolved;
     GLenum texture_target;

@@ -109,9 +109,12 @@ static void wined3d_texture_cleanup(struct wined3d_texture *texture)
     UINT sub_count = texture->level_count * texture->layer_count;
     UINT i;
     struct wined3d_texture_dib *dib;
+    struct wined3d_device *device = texture->resource.device;
 
     TRACE("texture %p.\n", texture);
 
+    /* Be careful with context_acquire in this function. If the creation of
+     * swapchain textures fails GL may not be properly initialized. */
     for (i = 0; i < sub_count; ++i)
     {
         struct wined3d_resource *sub_resource = texture->sub_resources[i].old;
@@ -122,6 +125,18 @@ static void wined3d_texture_cleanup(struct wined3d_texture *texture)
             DeleteDC(dib->dc);
             DeleteObject(dib->dib_section);
             dib->bitmap_data = NULL;
+        }
+
+        if (texture->sub_resources[i].pbo)
+        {
+            struct wined3d_context *context;
+            const struct wined3d_gl_info *gl_info;
+            TRACE("Deleting PBO %u.\n", texture->sub_resources[i].pbo);
+
+            context = context_acquire(device, NULL);
+            gl_info = context->gl_info;
+            GL_EXTCALL(glDeleteBuffers(1, &texture->sub_resources[i].pbo));
+            context_release(context);
         }
 
         if (sub_resource)
@@ -820,8 +835,8 @@ static void texture2d_sub_resource_add_dirty_region(struct wined3d_resource *sub
     struct wined3d_surface *surface = surface_from_resource(sub_resource);
     struct wined3d_context *context;
 
-    surface_prepare_map_memory(surface);
     context = context_acquire(surface->resource.device, NULL);
+    surface_prepare_map_memory(surface, context);
     surface_load_location(surface, context, surface->resource.map_binding);
     context_release(context);
     wined3d_texture_invalidate_location(surface->container, surface->sub_resource_idx,
@@ -933,6 +948,17 @@ static ULONG texture_resource_decref(struct wined3d_resource *resource)
     return wined3d_texture_decref(wined3d_texture_from_resource(resource));
 }
 
+/* Context activation is done by the caller. */
+void wined3d_texture_remove_buffer(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+        const struct wined3d_gl_info *gl_info)
+{
+    GL_EXTCALL(glDeleteBuffers(1, &texture->sub_resources[sub_resource_idx].pbo));
+    checkGLcall("glDeleteBuffers(1, &texture->sub_resources[sub_resource_idx].pbo)");
+
+    texture->sub_resources[sub_resource_idx].pbo = 0;
+    wined3d_texture_invalidate_location(texture, sub_resource_idx, WINED3D_LOCATION_BUFFER);
+}
+
 static void wined3d_texture_unload(struct wined3d_resource *resource)
 {
     struct wined3d_texture *texture = wined3d_texture_from_resource(resource);
@@ -946,6 +972,13 @@ static void wined3d_texture_unload(struct wined3d_resource *resource)
         struct wined3d_resource *sub_resource = texture->sub_resources[i].old;
 
         sub_resource->resource_ops->resource_unload(sub_resource);
+
+        if (texture->sub_resources[i].pbo)
+        {
+            struct wined3d_context *context = context_acquire(texture->resource.device, NULL);
+            wined3d_texture_remove_buffer(texture, i, context->gl_info);
+            context_release(context);
+        }
     }
 
     wined3d_texture_force_reload(texture);
@@ -1629,7 +1662,7 @@ HRESULT CDECL wined3d_texture_get_dc(struct wined3d_texture *texture, unsigned i
         }
         if (!(surface->resource.map_binding == WINED3D_LOCATION_USER_MEMORY
                 || texture->flags & WINED3D_TEXTURE_PIN_SYSMEM
-                || surface->pbo))
+                || texture->sub_resources[sub_resource_idx].pbo))
             surface->resource.map_binding = WINED3D_LOCATION_DIB;
     }
 
@@ -1876,4 +1909,29 @@ HRESULT wined3d_texture_create_dib_section(struct wined3d_texture *texture, unsi
     SelectObject(dib->dc, dib->dib_section);
 
     return WINED3D_OK;
+}
+
+/* Context activation is done by the caller. */
+void wined3d_texture_prepare_buffer(struct wined3d_texture *texture, unsigned int sub_resource_idx,
+        struct wined3d_context *context)
+{
+    const struct wined3d_gl_info *gl_info = context->gl_info;
+    GLuint pbo;
+    struct wined3d_resource *sub_resource;
+
+    if (texture->sub_resources[sub_resource_idx].pbo)
+        return;
+
+    sub_resource = texture->sub_resources[sub_resource_idx].old;
+
+    GL_EXTCALL(glGenBuffers(1, &pbo));
+    GL_EXTCALL(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo));
+    GL_EXTCALL(glBufferData(GL_PIXEL_UNPACK_BUFFER, sub_resource->size, NULL, GL_STREAM_DRAW));
+    GL_EXTCALL(glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0));
+    checkGLcall("Create PBO");
+
+    TRACE("Created PBO %u for texture %p, sub resource index %u (surface / volume %p).\n",
+            pbo, texture, sub_resource_idx, sub_resource);
+
+    texture->sub_resources[sub_resource_idx].pbo = pbo;
 }
