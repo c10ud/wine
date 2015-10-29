@@ -2391,6 +2391,7 @@ struct wined3d_texture
             HBITMAP dib_section;
             void *bitmap_data;
             HDC dc;
+            BOOL in_use;
         } dib;
     } sub_resources[1];
 };
